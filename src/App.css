@@ -6,7 +6,14 @@
   height: 40vmin;
   pointer-events: none;
 }
-
+.canvas-draw{
+  background-color: gray;
+}
+.tool-comp{
+  position: absolute;
+  left: 0;
+  top: 50%;
+}
 @media (prefers-reduced-motion: no-preference) {
   .App-logo {
     animation: App-logo-spin infinite 20s linear;
