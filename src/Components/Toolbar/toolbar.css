@@ -1,0 +1,12 @@
+.toolbar{
+    position: absolute;
+    top: 50%;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1;
+}
+.active{
+    background-color: green;
+}
