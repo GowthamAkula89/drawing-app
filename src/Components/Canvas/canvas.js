@@ -3,7 +3,7 @@ import io from 'socket.io-client';
 
 const socket = io('http://localhost:3000');
 
-const Canvas = ({ color, brushSize, tool }) => {
+const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
   const canvasRef = useRef(null);
   const brushRef = useRef(null);
   const contextRef = useRef(null);
@@ -23,6 +23,8 @@ const Canvas = ({ color, brushSize, tool }) => {
       canvas.style.height = `${window.innerHeight}px`;
       brushCanvas.style.width = `${window.innerWidth}px`;
       brushCanvas.style.height = `${window.innerHeight}px`;
+
+      redrawAll();
     };
 
     handleResize();
@@ -30,15 +32,17 @@ const Canvas = ({ color, brushSize, tool }) => {
 
     const canvas = canvasRef.current;
     const brushCanvas = brushRef.current;
-    
+
     const context = canvas.getContext('2d');
     const brushContext = brushCanvas.getContext('2d');
-    
+
     contextRef.current = { context, brushContext };
 
-    socket.on('drawing', ({ x0, y0, x1, y1, color, size, tool }) => {
+    socket.on('drawing', ({ x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor }) => {
       if (tool === 'eraser') {
         eraseLine(x0, y0, x1, y1, size, false);
+      } else if (tool === 'text') {
+        drawText(x0, y0, text, fontSize, fontColor, false);
       } else {
         drawShape(x0, y0, x1, y1, color, size, tool, false);
       }
@@ -69,12 +73,13 @@ const Canvas = ({ color, brushSize, tool }) => {
     brushContext.closePath();
 
     if (emit) {
-      socket.emit('drawing', { x0, y0, x1, y1, color, size });
+      socket.emit('drawing', { x0, y0, x1, y1, color, size, tool: 'brush' });
     }
   };
 
   const eraseLine = (x0, y0, x1, y1, size, emit) => {
-    const { brushContext } = contextRef.current;
+    const { brushContext, context } = contextRef.current;
+    // Erase from brush canvas
     brushContext.globalCompositeOperation = 'destination-out';
     brushContext.lineWidth = size;
     brushContext.beginPath();
@@ -83,6 +88,16 @@ const Canvas = ({ color, brushSize, tool }) => {
     brushContext.stroke();
     brushContext.closePath();
     brushContext.globalCompositeOperation = 'source-over';
+
+    // Erase from main canvas (for text and shapes)
+    context.globalCompositeOperation = 'destination-out';
+    context.lineWidth = size;
+    context.beginPath();
+    context.moveTo(x0, y0);
+    context.lineTo(x1, y1);
+    context.stroke();
+    context.closePath();
+    context.globalCompositeOperation = 'source-over';
 
     if (emit) {
       socket.emit('drawing', { x0, y0, x1, y1, size, tool: 'eraser' });
@@ -119,11 +134,28 @@ const Canvas = ({ color, brushSize, tool }) => {
     }
   };
 
-  const redrawShapes = () => {
+  const drawText = (x, y, text, fontSize, fontColor, emit) => {
     const { context } = contextRef.current;
-    context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    context.font = `${fontSize}px Arial`;
+    context.fillStyle = fontColor;
+    context.fillText(text, x, y);
+
+    if (emit) {
+      socket.emit('drawing', { x, y, text, fontSize, fontColor, tool: 'text' });
+    }
+  };
+
+  const redrawAll = () => {
+    const { context } = contextRef.current;
+    context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+
     shapes.forEach(shape => {
-      drawShape(shape.x0, shape.y0, shape.x1, shape.y1, shape.color, shape.size, shape.tool, false);
+      const { x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor } = shape;
+      if (tool === 'text') {
+        drawText(x0, y0, text, fontSize, fontColor, false);
+      } else {
+        drawShape(x0, y0, x1, y1, color, size, tool, false);
+      }
     });
   };
 
@@ -137,6 +169,10 @@ const Canvas = ({ color, brushSize, tool }) => {
       brushContext.moveTo(offsetX, offsetY);
       brushContext.lastX = offsetX;
       brushContext.lastY = offsetY;
+    } else if (tool === 'text') {
+      const newText = { x0: offsetX, y0: offsetY, text, fontSize, fontColor, tool: 'text' };
+      setShapes([...shapes, newText]);
+      drawText(offsetX, offsetY, text, fontSize, fontColor, true);
     } else {
       setStartPos({ x: offsetX, y: offsetY });
     }
@@ -152,7 +188,7 @@ const Canvas = ({ color, brushSize, tool }) => {
     } else if (tool === 'eraser') {
       eraseLine(contextRef.current.brushContext.lastX, contextRef.current.brushContext.lastY, offsetX, offsetY, brushSize, true);
     } else {
-      redrawShapes();
+      redrawAll();
       drawShape(startPos.x, startPos.y, offsetX, offsetY, color, brushSize, tool, false);
     }
 

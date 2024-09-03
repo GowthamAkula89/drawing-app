@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import './toolbar.css';
 
-const Toolbar = ({ setColor, brushSize, setBrushSize, setTool }) => {
+const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontSize, setFontColor }) => {
   const [selectedTool, setSelectedTool] = useState('brush');
 
   const handleToolSelect = (tool) => {
-    console.log("tool", tool)
     setSelectedTool(tool);
     setTool(tool);
   };
@@ -33,6 +32,30 @@ const Toolbar = ({ setColor, brushSize, setBrushSize, setTool }) => {
       <button onClick={() => handleToolSelect('rectangle')} className={selectedTool === 'rectangle' ? 'active' : ''}>Rectangle</button>
       <button onClick={() => handleToolSelect('circle')} className={selectedTool === 'circle' ? 'active' : ''}>Circle</button>
       <button onClick={() => handleToolSelect('polygon')} className={selectedTool === 'polygon' ? 'active' : ''}>Polygon</button>
+      <button onClick={() => handleToolSelect('text')} className={selectedTool === 'text' ? 'active' : ''}>Text</button>
+      {selectedTool === 'text' && (
+        <>
+          <label>Font Size: </label>
+          <input
+            type="number"
+            min="8"
+            max="72"
+            defaultValue="16"
+            onChange={(e) => setFontSize(Number(e.target.value))}
+          />
+          <label>Font Color: </label>
+          <input
+            type="color"
+            onChange={(e) => setFontColor(e.target.value)}
+            title="Select Font Color"
+          />
+          <input
+            type="text"
+            placeholder="Enter text"
+            onChange={(e) => setText(e.target.value)}
+          />
+        </>
+      )}
     </div>
   );
 };
