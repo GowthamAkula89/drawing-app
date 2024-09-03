@@ -1,51 +1,44 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import io from 'socket.io-client';
 
 const socket = io('http://localhost:3000');
-
-const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
+const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }, ref) => {
   const canvasRef = useRef(null);
-  const brushRef = useRef(null);
-  const contextRef = useRef(null);
+  const contextRef = useRef({});
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
-  const [shapes, setShapes] = useState([]);
+  const [actions, setActions] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+
+  useImperativeHandle(ref, () => ({
+    undo,
+    redo,
+  }));
 
   useEffect(() => {
-    const handleResize = () => {
-      const canvas = canvasRef.current;
-      const brushCanvas = brushRef.current;
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      brushCanvas.width = canvas.width;
-      brushCanvas.height = canvas.height;
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
-      brushCanvas.style.width = `${window.innerWidth}px`;
-      brushCanvas.style.height = `${window.innerHeight}px`;
-
-      redrawAll(); // Ensure context is initialized before calling
-    };
-
     const canvas = canvasRef.current;
-    const brushCanvas = brushRef.current;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
 
     const context = canvas.getContext('2d');
-    const brushContext = brushCanvas.getContext('2d');
+    contextRef.current = { context };
 
-    contextRef.current = { context, brushContext };
+    const handleResize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      redrawAll();
+    };
 
-    handleResize(); // Call after initializing context
+    handleResize();
     window.addEventListener('resize', handleResize);
 
     socket.on('drawing', ({ x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor }) => {
-      if (tool === 'eraser') {
-        eraseLine(x0, y0, x1, y1, size, false);
-      } else if (tool === 'text') {
-        drawText(x0, y0, text, fontSize, fontColor, false);
-      } else {
-        drawShape(x0, y0, x1, y1, color, size, tool, false);
-      }
+      addNewAction({ x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor }, false);
     });
 
     return () => {
@@ -55,43 +48,39 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
   }, []);
 
   useEffect(() => {
-    const { brushContext } = contextRef.current || {}; // Safely check context
-    if (brushContext) {
-      brushContext.strokeStyle = color;
-      brushContext.lineWidth = brushSize;
+    redrawAll();
+  }, [tool]);
+
+  useEffect(() => {
+    const { context } = contextRef.current || {};
+    if (context) {
+      context.strokeStyle = color;
+      context.lineWidth = brushSize;
     }
   }, [color, brushSize]);
 
-  const drawLine = (x0, y0, x1, y1, color, size, emit) => {
-    const { brushContext } = contextRef.current;
-    brushContext.strokeStyle = color;
-    brushContext.lineWidth = size;
-    brushContext.beginPath();
-    brushContext.moveTo(x0, y0);
-    brushContext.lineTo(x1, y1);
-    brushContext.stroke();
-    brushContext.closePath();
-
+  const addNewAction = (action, emit = true) => {
+    setActions((prevActions) => [...prevActions, action]);
     if (emit) {
-      socket.emit('drawing', { x0, y0, x1, y1, color, size, tool: 'brush' });
+      socket.emit('drawing', action);
     }
   };
 
-  const eraseLine = (x0, y0, x1, y1, size, emit) => {
-    const { brushContext, context } = contextRef.current;
-    if (!brushContext || !context) return; // Check if context exists
+  const drawLine = (x0, y0, x1, y1, color, size) => {
+    const { context } = contextRef.current;
+    context.strokeStyle = color;
+    context.lineWidth = size;
+    context.beginPath();
+    context.moveTo(x0, y0);
+    context.lineTo(x1, y1);
+    context.stroke();
+    context.closePath();
+  };
 
-    // Erase from brush canvas
-    brushContext.globalCompositeOperation = 'destination-out';
-    brushContext.lineWidth = size;
-    brushContext.beginPath();
-    brushContext.moveTo(x0, y0);
-    brushContext.lineTo(x1, y1);
-    brushContext.stroke();
-    brushContext.closePath();
-    brushContext.globalCompositeOperation = 'source-over';
+  const eraseLine = (x0, y0, x1, y1, size) => {
+    const { context } = contextRef.current;
+    if (!context) return;
 
-    // Erase from main canvas (for text and shapes)
     context.globalCompositeOperation = 'destination-out';
     context.lineWidth = size;
     context.beginPath();
@@ -100,33 +89,11 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
     context.stroke();
     context.closePath();
     context.globalCompositeOperation = 'source-over';
-
-    // Check if eraser intersects with any text and remove it
-    setShapes(prevShapes => prevShapes.filter(shape => {
-      if (shape.tool === 'text') {
-        const textWidth = context.measureText(shape.text).width;
-        const textHeight = fontSize; // Approximate text height
-        // Check if the eraser line intersects the text bounding box
-        const eraserRect = { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
-        const textRect = { x0: shape.x0, y0: shape.y0 - textHeight, x1: shape.x0 + textWidth, y1: shape.y0 };
-        return !(
-          eraserRect.x1 > textRect.x0 &&
-          eraserRect.x0 < textRect.x1 &&
-          eraserRect.y1 > textRect.y0 &&
-          eraserRect.y0 < textRect.y1
-        );
-      }
-      return true;
-    }));
-
-    if (emit) {
-      socket.emit('drawing', { x0, y0, x1, y1, size, tool: 'eraser' });
-    }
   };
 
-  const drawShape = (x0, y0, x1, y1, color, size, tool, emit) => {
+  const drawShape = (x0, y0, x1, y1, color, size, tool) => {
     const { context } = contextRef.current;
-    if (!context) return; // Check if context exists
+    if (!context) return;
 
     context.strokeStyle = color;
     context.lineWidth = size;
@@ -150,37 +117,33 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
 
     context.stroke();
     context.closePath();
-
-    if (emit) {
-      socket.emit('drawing', { x0, y0, x1, y1, color, size, tool });
-    }
   };
 
-  const drawText = (x, y, text, fontSize, fontColor, emit) => {
+  const drawText = (x, y, text, fontSize, fontColor) => {
     const { context } = contextRef.current;
-    if (!context) return; // Check if context exists
+    if (!context) return;
 
     context.font = `${fontSize}px Arial`;
     context.fillStyle = fontColor;
     context.fillText(text, x, y);
-
-    if (emit) {
-      socket.emit('drawing', { x, y, text, fontSize, fontColor, tool: 'text' });
-    }
   };
 
   const redrawAll = () => {
     const { context } = contextRef.current;
-    if (!context) return; // Check if context exists
+    if (!context) return;
 
     context.clearRect(0, 0, context.canvas.width, context.canvas.height);
 
-    shapes.forEach(shape => {
-      const { x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor } = shape;
+    actions.forEach(action => {
+      const { x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor } = action;
       if (tool === 'text') {
-        drawText(x0, y0, text, fontSize, fontColor, false);
+        drawText(x0, y0, text, fontSize, fontColor);
+      } else if (tool === 'brush') {
+        drawLine(x0, y0, x1, y1, color, size);
+      } else if (tool === 'eraser') {
+        eraseLine(x0, y0, x1, y1, size);
       } else {
-        drawShape(x0, y0, x1, y1, color, size, tool, false);
+        drawShape(x0, y0, x1, y1, color, size, tool);
       }
     });
   };
@@ -190,15 +153,14 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
     setIsDrawing(true);
 
     if (tool === 'brush' || tool === 'eraser') {
-      const { brushContext } = contextRef.current;
-      brushContext.beginPath();
-      brushContext.moveTo(offsetX, offsetY);
-      brushContext.lastX = offsetX;
-      brushContext.lastY = offsetY;
+      const { context } = contextRef.current;
+      context.beginPath();
+      context.moveTo(offsetX, offsetY);
+      contextRef.current.lastX = offsetX;
+      contextRef.current.lastY = offsetY;
     } else if (tool === 'text') {
-      const newText = { x0: offsetX, y0: offsetY, text, fontSize, fontColor, tool: 'text' };
-      setShapes([...shapes, newText]);
-      drawText(offsetX, offsetY, text, fontSize, fontColor, true);
+      addNewAction({ x0: offsetX, y0: offsetY, text, fontSize, fontColor, tool: 'text' });
+      drawText(offsetX, offsetY, text, fontSize, fontColor);
     } else {
       setStartPos({ x: offsetX, y: offsetY });
     }
@@ -210,16 +172,19 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
     const { offsetX, offsetY } = nativeEvent;
 
     if (tool === 'brush') {
-      drawLine(contextRef.current.brushContext.lastX, contextRef.current.brushContext.lastY, offsetX, offsetY, color, brushSize, true);
+      drawLine(contextRef.current.lastX, contextRef.current.lastY, offsetX, offsetY, color, brushSize);
+      addNewAction({ x0: contextRef.current.lastX, y0: contextRef.current.lastY, x1: offsetX, y1: offsetY, color, size: brushSize, tool: 'brush' });
+      contextRef.current.lastX = offsetX;
+      contextRef.current.lastY = offsetY;
     } else if (tool === 'eraser') {
-      eraseLine(contextRef.current.brushContext.lastX, contextRef.current.brushContext.lastY, offsetX, offsetY, brushSize, true);
+      eraseLine(contextRef.current.lastX, contextRef.current.lastY, offsetX, offsetY, brushSize);
+      addNewAction({ x0: contextRef.current.lastX, y0: contextRef.current.lastY, x1: offsetX, y1: offsetY, size: brushSize, tool: 'eraser' });
+      contextRef.current.lastX = offsetX;
+      contextRef.current.lastY = offsetY;
     } else {
       redrawAll();
-      drawShape(startPos.x, startPos.y, offsetX, offsetY, color, brushSize, tool, false);
+      drawShape(startPos.x, startPos.y, offsetX, offsetY, color, brushSize, tool);
     }
-
-    contextRef.current.brushContext.lastX = offsetX;
-    contextRef.current.brushContext.lastY = offsetY;
   };
 
   const finishDrawing = ({ nativeEvent }) => {
@@ -227,35 +192,67 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
     setIsDrawing(false);
 
     if (tool === 'brush' || tool === 'eraser') {
-      contextRef.current.brushContext.closePath();
+      contextRef.current.context.closePath();
     } else {
       const { offsetX, offsetY } = nativeEvent;
-      const newShape = { x0: startPos.x, y0: startPos.y, x1: offsetX, y1: offsetY, color, size: brushSize, tool };
-      setShapes([...shapes, newShape]);
-      drawShape(startPos.x, startPos.y, offsetX, offsetY, color, brushSize, tool, true);
+      addNewAction({ x0: startPos.x, y0: startPos.y, x1: offsetX, y1: offsetY, color, size: brushSize, tool });
+      drawShape(startPos.x, startPos.y, offsetX, offsetY, color, brushSize, tool);
     }
+
+    saveState();
+  };
+
+  const saveState = () => {
+    const dataURL = canvasRef.current.toDataURL();
+    setHistory(prevHistory => [...prevHistory, dataURL]);
+    setRedoStack([]);
+  };
+
+  const undo = () => {
+    if (history.length === 0) return;
+
+    const lastState = history[history.length - 1];
+    const newHistory = history.slice(0, -1);
+    setRedoStack(prevRedoStack => [canvasRef.current.toDataURL(), ...prevRedoStack]);
+
+    const { context } = contextRef.current;
+    const img = new Image();
+    img.src = lastState;
+    img.onload = () => {
+      context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      context.drawImage(img, 0, 0);
+    };
+
+    setHistory(newHistory);
+  };
+
+  const redo = () => {
+    if (redoStack.length === 0) return;
+
+    const nextState = redoStack[0];
+    const newRedoStack = redoStack.slice(1);
+    setHistory(prevHistory => [...prevHistory, canvasRef.current.toDataURL()]);
+
+    const { context } = contextRef.current;
+    const img = new Image();
+    img.src = nextState;
+    img.onload = () => {
+      context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      context.drawImage(img, 0, 0);
+    };
+
+    setRedoStack(newRedoStack);
   };
 
   return (
-    <div>
-      <canvas
-        ref={brushRef}
-        style={{ position: 'absolute', top: 0, left: 0 }}
-        onMouseDown={startDrawing}
-        onMouseUp={finishDrawing}
-        onMouseMove={draw}
-        onMouseOut={finishDrawing}
-      />
-      <canvas
-        ref={canvasRef}
-        style={{ position: 'absolute', top: 0, left: 0 }}
-        onMouseDown={startDrawing}
-        onMouseUp={finishDrawing}
-        onMouseMove={draw}
-        onMouseOut={finishDrawing}
-      />
-    </div>
+    <canvas
+      ref={canvasRef}
+      style={{ position: 'absolute', top: 0, left: 0 }}
+      onMouseDown={startDrawing}
+      onMouseUp={finishDrawing}
+      onMouseMove={draw}
+      onMouseOut={finishDrawing}
+    />
   );
-};
-
+});
 export default Canvas;

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './toolbar.css';
 
-const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontSize, setFontColor }) => {
+const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontSize, setFontColor, handleUndo, handleRedo }) => {
   const [selectedTool, setSelectedTool] = useState('brush');
 
   const handleToolSelect = (tool) => {
@@ -56,6 +56,8 @@ const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontS
           />
         </>
       )}
+      <button onClick={handleUndo}>Undo</button>
+      <button onClick={handleRedo}>Redo</button>
     </div>
   );
 };
