@@ -24,11 +24,8 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
       brushCanvas.style.width = `${window.innerWidth}px`;
       brushCanvas.style.height = `${window.innerHeight}px`;
 
-      redrawAll();
+      redrawAll(); // Ensure context is initialized before calling
     };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
 
     const canvas = canvasRef.current;
     const brushCanvas = brushRef.current;
@@ -37,6 +34,9 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
     const brushContext = brushCanvas.getContext('2d');
 
     contextRef.current = { context, brushContext };
+
+    handleResize(); // Call after initializing context
+    window.addEventListener('resize', handleResize);
 
     socket.on('drawing', ({ x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor }) => {
       if (tool === 'eraser') {
@@ -55,7 +55,7 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
   }, []);
 
   useEffect(() => {
-    const { brushContext } = contextRef.current;
+    const { brushContext } = contextRef.current || {}; // Safely check context
     if (brushContext) {
       brushContext.strokeStyle = color;
       brushContext.lineWidth = brushSize;
@@ -79,6 +79,8 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
 
   const eraseLine = (x0, y0, x1, y1, size, emit) => {
     const { brushContext, context } = contextRef.current;
+    if (!brushContext || !context) return; // Check if context exists
+
     // Erase from brush canvas
     brushContext.globalCompositeOperation = 'destination-out';
     brushContext.lineWidth = size;
@@ -99,6 +101,24 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
     context.closePath();
     context.globalCompositeOperation = 'source-over';
 
+    // Check if eraser intersects with any text and remove it
+    setShapes(prevShapes => prevShapes.filter(shape => {
+      if (shape.tool === 'text') {
+        const textWidth = context.measureText(shape.text).width;
+        const textHeight = fontSize; // Approximate text height
+        // Check if the eraser line intersects the text bounding box
+        const eraserRect = { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
+        const textRect = { x0: shape.x0, y0: shape.y0 - textHeight, x1: shape.x0 + textWidth, y1: shape.y0 };
+        return !(
+          eraserRect.x1 > textRect.x0 &&
+          eraserRect.x0 < textRect.x1 &&
+          eraserRect.y1 > textRect.y0 &&
+          eraserRect.y0 < textRect.y1
+        );
+      }
+      return true;
+    }));
+
     if (emit) {
       socket.emit('drawing', { x0, y0, x1, y1, size, tool: 'eraser' });
     }
@@ -106,6 +126,8 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
 
   const drawShape = (x0, y0, x1, y1, color, size, tool, emit) => {
     const { context } = contextRef.current;
+    if (!context) return; // Check if context exists
+
     context.strokeStyle = color;
     context.lineWidth = size;
     context.beginPath();
@@ -136,6 +158,8 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
 
   const drawText = (x, y, text, fontSize, fontColor, emit) => {
     const { context } = contextRef.current;
+    if (!context) return; // Check if context exists
+
     context.font = `${fontSize}px Arial`;
     context.fillStyle = fontColor;
     context.fillText(text, x, y);
@@ -147,6 +171,8 @@ const Canvas = ({ color, brushSize, tool, text, fontSize, fontColor }) => {
 
   const redrawAll = () => {
     const { context } = contextRef.current;
+    if (!context) return; // Check if context exists
+
     context.clearRect(0, 0, context.canvas.width, context.canvas.height);
 
     shapes.forEach(shape => {
