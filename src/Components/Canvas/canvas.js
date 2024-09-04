@@ -37,7 +37,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
 
     handleResize();
     window.addEventListener('resize', handleResize);
-
+    // Socket event for receiving drawing actions
     socket.on('drawing', ({ x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor }) => {
       addNewAction({ x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor }, false);
     });
@@ -52,6 +52,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
     redrawAll();
   }, [tool, actionIndex]);
 
+  // Update drawing properties (color, brush size) when they change
   useEffect(() => {
     const { context } = contextRef.current || {};
     if (context) {
@@ -60,12 +61,14 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
     }
   }, [color, brushSize]);
 
+  //Functions for Drawing
   const addNewAction = (action, emit = true) => {
     setActions((prevActions) => [...prevActions.slice(0, actionIndex), action]);
     setActionIndex(prevIndex => prevIndex + 1);
     if (emit) {
       socket.emit('drawing', action);
     }
+    redrawAll()
   };
 
   const drawLine = (x0, y0, x1, y1, color, size) => {
@@ -143,7 +146,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
       }
     });
   };
-
+  // Mouse Event Handlers
   const startDrawing = ({ nativeEvent }) => {
     const { offsetX, offsetY } = nativeEvent;
     setIsDrawing(true);
@@ -198,6 +201,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
     setHistory([...history, dataURL]);
   };
 
+  // State Management for Undo/Redo
   const undo = () => {
     if (actionIndex === 0) return;
     setRedoStack(prevRedoStack => [canvasRef.current.toDataURL(), ...prevRedoStack]);
