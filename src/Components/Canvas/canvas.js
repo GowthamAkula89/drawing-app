@@ -10,6 +10,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
   const [actions, setActions] = useState([]);
   const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
+  const [actionIndex, setActionIndex] = useState(0);
 
   useImperativeHandle(ref, () => ({
     undo,
@@ -49,7 +50,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
 
   useEffect(() => {
     redrawAll();
-  }, [tool]);
+  }, [tool, actionIndex]);
 
   useEffect(() => {
     const { context } = contextRef.current || {};
@@ -60,7 +61,8 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
   }, [color, brushSize]);
 
   const addNewAction = (action, emit = true) => {
-    setActions((prevActions) => [...prevActions, action]);
+    setActions((prevActions) => [...prevActions.slice(0, actionIndex), action]);
+    setActionIndex(prevIndex => prevIndex + 1);
     if (emit) {
       socket.emit('drawing', action);
     }
@@ -76,11 +78,9 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
     context.stroke();
     context.closePath();
   };
-
   const eraseLine = (x0, y0, x1, y1, size) => {
     const { context } = contextRef.current;
     if (!context) return;
-
     context.globalCompositeOperation = 'destination-out';
     context.lineWidth = size;
     context.beginPath();
@@ -98,7 +98,6 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
     context.strokeStyle = color;
     context.lineWidth = size;
     context.beginPath();
-
     switch (tool) {
       case 'line':
         context.moveTo(x0, y0);
@@ -122,7 +121,6 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
   const drawText = (x, y, text, fontSize, fontColor) => {
     const { context } = contextRef.current;
     if (!context) return;
-
     context.font = `${fontSize}px Arial`;
     context.fillStyle = fontColor;
     context.fillText(text, x, y);
@@ -131,10 +129,8 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
   const redrawAll = () => {
     const { context } = contextRef.current;
     if (!context) return;
-
     context.clearRect(0, 0, context.canvas.width, context.canvas.height);
-
-    actions.forEach(action => {
+    actions.slice(0, actionIndex).forEach(action => {
       const { x0, y0, x1, y1, color, size, tool, text, fontSize, fontColor } = action;
       if (tool === 'text') {
         drawText(x0, y0, text, fontSize, fontColor);
@@ -151,7 +147,6 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
   const startDrawing = ({ nativeEvent }) => {
     const { offsetX, offsetY } = nativeEvent;
     setIsDrawing(true);
-
     if (tool === 'brush' || tool === 'eraser') {
       const { context } = contextRef.current;
       context.beginPath();
@@ -168,9 +163,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
 
   const draw = ({ nativeEvent }) => {
     if (!isDrawing) return;
-
     const { offsetX, offsetY } = nativeEvent;
-
     if (tool === 'brush') {
       drawLine(contextRef.current.lastX, contextRef.current.lastY, offsetX, offsetY, color, brushSize);
       addNewAction({ x0: contextRef.current.lastX, y0: contextRef.current.lastY, x1: offsetX, y1: offsetY, color, size: brushSize, tool: 'brush' });
@@ -178,7 +171,7 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
       contextRef.current.lastY = offsetY;
     } else if (tool === 'eraser') {
       eraseLine(contextRef.current.lastX, contextRef.current.lastY, offsetX, offsetY, brushSize);
-      addNewAction({ x0: contextRef.current.lastX, y0: contextRef.current.lastY, x1: offsetX, y1: offsetY, size: brushSize, tool: 'eraser' });
+      addNewAction({ x0: contextRef.current.lastX, y0: offsetY, x1: offsetX, y1: offsetY, size: brushSize, tool: 'eraser' });
       contextRef.current.lastX = offsetX;
       contextRef.current.lastY = offsetY;
     } else {
@@ -190,7 +183,6 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
   const finishDrawing = ({ nativeEvent }) => {
     if (!isDrawing) return;
     setIsDrawing(false);
-
     if (tool === 'brush' || tool === 'eraser') {
       contextRef.current.context.closePath();
     } else {
@@ -198,61 +190,36 @@ const Canvas = forwardRef(({ color, brushSize, tool, text, fontSize, fontColor }
       addNewAction({ x0: startPos.x, y0: startPos.y, x1: offsetX, y1: offsetY, color, size: brushSize, tool });
       drawShape(startPos.x, startPos.y, offsetX, offsetY, color, brushSize, tool);
     }
-
     saveState();
   };
 
   const saveState = () => {
     const dataURL = canvasRef.current.toDataURL();
-    setHistory(prevHistory => [...prevHistory, dataURL]);
-    setRedoStack([]);
+    setHistory([...history, dataURL]);
   };
 
   const undo = () => {
-    if (history.length === 0) return;
-
-    const lastState = history[history.length - 1];
-    const newHistory = history.slice(0, -1);
+    if (actionIndex === 0) return;
     setRedoStack(prevRedoStack => [canvasRef.current.toDataURL(), ...prevRedoStack]);
-
-    const { context } = contextRef.current;
-    const img = new Image();
-    img.src = lastState;
-    img.onload = () => {
-      context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      context.drawImage(img, 0, 0);
-    };
-
-    setHistory(newHistory);
+    setActionIndex(prevIndex => prevIndex - 1);
+    redrawAll();
   };
 
   const redo = () => {
-    if (redoStack.length === 0) return;
-
-    const nextState = redoStack[0];
-    const newRedoStack = redoStack.slice(1);
-    setHistory(prevHistory => [...prevHistory, canvasRef.current.toDataURL()]);
-
-    const { context } = contextRef.current;
-    const img = new Image();
-    img.src = nextState;
-    img.onload = () => {
-      context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      context.drawImage(img, 0, 0);
-    };
-
-    setRedoStack(newRedoStack);
+    if (actionIndex >= actions.length) return;
+    setActionIndex(prevIndex => prevIndex + 1);
+    redrawAll();
   };
 
   return (
     <canvas
       ref={canvasRef}
-      style={{ position: 'absolute', top: 0, left: 0 }}
       onMouseDown={startDrawing}
-      onMouseUp={finishDrawing}
       onMouseMove={draw}
-      onMouseOut={finishDrawing}
+      onMouseUp={finishDrawing}
+      onMouseLeave={() => setIsDrawing(false)}
     />
   );
 });
+
 export default Canvas;
