@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import './toolbar.css';
-
+import { TiPencil } from "react-icons/ti";
+import { CiEraser } from "react-icons/ci";
+import { IoRemoveOutline } from "react-icons/io5";
+import { MdOutlineRectangle } from "react-icons/md";
+import { FaRegCircle } from "react-icons/fa";
+import { FaUndo } from "react-icons/fa";
+import { FaRedo } from "react-icons/fa";
+import { IoTextOutline } from "react-icons/io5";
 const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontSize, setFontColor, handleUndo, handleRedo }) => {
   const [selectedTool, setSelectedTool] = useState('brush');
 
@@ -26,13 +33,12 @@ const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontS
         onChange={(e) => setBrushSize(Number(e.target.value))}
         title="Brush Size"
       />
-      <button onClick={() => handleToolSelect('brush')} className={selectedTool === 'brush' ? 'active' : ''}>Brush</button>
-      <button onClick={() => handleToolSelect('eraser')} className={selectedTool === 'eraser' ? 'active' : ''}>Eraser</button>
-      <button onClick={() => handleToolSelect('line')} className={selectedTool === 'line' ? 'active' : ''}>Line</button>
-      <button onClick={() => handleToolSelect('rectangle')} className={selectedTool === 'rectangle' ? 'active' : ''}>Rectangle</button>
-      <button onClick={() => handleToolSelect('circle')} className={selectedTool === 'circle' ? 'active' : ''}>Circle</button>
-      <button onClick={() => handleToolSelect('polygon')} className={selectedTool === 'polygon' ? 'active' : ''}>Polygon</button>
-      <button onClick={() => handleToolSelect('text')} className={selectedTool === 'text' ? 'active' : ''}>Text</button>
+      <TiPencil onClick={() => handleToolSelect('brush')} className= {`btn ${selectedTool === 'brush' ? 'active' : ''}`}/>
+      <CiEraser onClick={() => handleToolSelect('eraser')} className={`btn ${selectedTool === 'eraser' ? 'active' : ''}`}/>
+      <IoRemoveOutline onClick={() => handleToolSelect('line')} className={`btn ${selectedTool === 'line' ? 'active' : ''}`}/>
+      <MdOutlineRectangle  onClick={() => handleToolSelect('rectangle')} className={`btn ${selectedTool === 'rectangle' ? 'active' : ''}`}/>
+      <FaRegCircle onClick={() => handleToolSelect('circle')} className={`btn ${selectedTool === 'circle' ? 'active' : ''}`}/>
+      <IoTextOutline onClick={() => handleToolSelect('text')} className={`btn ${selectedTool === 'text' ? 'active' : ''}`}/>
       {selectedTool === 'text' && (
         <>
           <label>Font Size: </label>
@@ -42,6 +48,7 @@ const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontS
             max="72"
             defaultValue="16"
             onChange={(e) => setFontSize(Number(e.target.value))}
+            className='input-field'
           />
           <label>Font Color: </label>
           <input
@@ -53,11 +60,12 @@ const Toolbar = ({ setColor, brushSize, setBrushSize, setTool, setText, setFontS
             type="text"
             placeholder="Enter text"
             onChange={(e) => setText(e.target.value)}
+            className='input-field'
           />
         </>
       )}
-      <button onClick={handleUndo}>Undo</button>
-      <button onClick={handleRedo}>Redo</button>
+      <FaUndo onClick={handleUndo} className='btn'/>
+      <FaRedo onClick={handleRedo} className='btn'/>
     </div>
   );
 };

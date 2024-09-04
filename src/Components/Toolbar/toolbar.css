@@ -1,12 +1,27 @@
 .toolbar{
+    box-shadow: 2px 0px 2px 0px gray;
+    padding: 10px;
     position: absolute;
-    top: 25%;
+    top: 5%;
     left: 0;
     display: flex;
     flex-direction: column;
     gap: 10px;
     z-index: 1;
+    height: 80%;
 }
-.active{
-    background-color: green;
+.btn.active{
+    fill: green;
+    color: green;
+    width: 35px;
+    height: 35px;
+}
+.btn{
+    width: 20px;
+    padding: 5px;
+    height: 20px;
+    cursor: pointer;
+}
+.input-field{
+    width: 115px;
 }
